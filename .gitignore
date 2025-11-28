@@ -1,0 +1,9 @@
+backlog.md
+*.sh
+*.crt
+*.key
+*.srl
+*.csr
+HTML/config.js
+config.json
+nodejs/package-lock.json
