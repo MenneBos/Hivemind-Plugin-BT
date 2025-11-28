@@ -4,7 +4,7 @@ from os import path
 PLUGIN_TYPE = "ovos.plugin.phal"  # Adjust based on the plugin type
 PLUGIN_NAME = "Hivemind-Plugin-BT"
 PLUGIN_PKG = PLUGIN_NAME.replace("-", "_")
-PLUGIN_CLAZZ = "GPIOInputs" # same is class name in __init__.py
+PLUGIN_CLAZZ = "AtomBTPlugin" # same is class name in __init__.py
 PLUGIN_CONFIGS = "MyPluginConfig"
 
 BASE_PATH = path.abspath(path.dirname(__file__))
