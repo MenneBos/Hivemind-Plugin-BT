@@ -1,32 +1,88 @@
-from setuptools import setup, find_packages
-from os import path
+#!/usr/bin/env python3
+import os
+from setuptools import setup
+from os import walk, path
+from os.path import join, dirname
+# from setuptools import setup, find_packages
 
-PLUGIN_TYPE = "ovos.plugin.phal"  # Adjust based on the plugin type
-PLUGIN_NAME = "Hivemind-Plugin-BT"
-PLUGIN_PKG = PLUGIN_NAME.replace("-", "_")
-PLUGIN_CLAZZ = "AtomBTPlugin" # same is class name in __init__.py
-PLUGIN_CONFIGS = "MyPluginConfig"
+URL = "https://github.com/MenneBos/Hivemind-Plugin-BT"
+SKILL_CLAZZ = "AtomBTPlugin"  # needs to match __init__.py class name
+PYPI_NAME = "Hivemind-Plugin-BT"  # pip install PYPI_NAME
 
-BASE_PATH = path.abspath(path.dirname(__file__))
-
-PLUGIN_ENTRY_POINT = f'{PLUGIN_NAME} = {PLUGIN_PKG}:{PLUGIN_CLAZZ}'
-CONFIG_ENTRY_POINT = f'{PLUGIN_NAME}.config = {PLUGIN_PKG}:{PLUGIN_CONFIGS}'
+# below derived from github url to ensure standard skill_id
+SKILL_AUTHOR, SKILL_NAME = URL.split(".com/")[-1].split("/")
+SKILL_PKG = SKILL_NAME.lower().replace('-', '_')
+PLUGIN_ENTRY_POINT = f'{SKILL_NAME.lower()}.{SKILL_AUTHOR.lower()}={SKILL_PKG}:{SKILL_CLAZZ}'
+# skill_id=package_name:SkillClass
 
 def get_requirements(requirements_filename: str):
-    requirements_file = path.join(BASE_PATH, "requirements",
+    requirements_file = path.join(path.abspath(path.dirname(__file__)),
                                   requirements_filename)
     with open(requirements_file, 'r', encoding='utf-8') as r:
         requirements = r.readlines()
-    requirements = [r.strip() for r in requirements if r.strip() and
-                    not r.strip().startswith("#")]
+    requirements = [r.strip() for r in requirements if r.strip()
+                    and not r.strip().startswith("#")]
+    if 'MYCROFT_LOOSE_REQUIREMENTS' in os.environ:
+        print('USING LOOSE REQUIREMENTS!')
+        requirements = [r.replace('==', '>=').replace('~=', '>=') for r in requirements]
     return requirements
 
-setup(
-    name=PLUGIN_NAME,
-    version='0.1.0',
-    packages=find_packages(),
-    install_requires=get_requirements('requirements.txt'),
-    keywords='ovos hivemind plugin phal bluetooth',
-    entry_points={PLUGIN_TYPE: PLUGIN_ENTRY_POINT, f'{PLUGIN_TYPE}.config': CONFIG_ENTRY_POINT}
-)
+def get_version():
+    """ Find the version of this skill"""
+    version_file = os.path.join(os.path.dirname(__file__), 'version.py')
+    major, minor, build, alpha = (None, None, None, None)
+    with open(version_file) as f:
+        for line in f:
+            if 'VERSION_MAJOR' in line:
+                major = line.split('=')[1].strip()
+            elif 'VERSION_MINOR' in line:
+                minor = line.split('=')[1].strip()
+            elif 'VERSION_BUILD' in line:
+                build = line.split('=')[1].strip()
+            elif 'VERSION_ALPHA' in line:
+                alpha = line.split('=')[1].strip()
 
+            if ((major and minor and build and alpha) or
+                    '# END_VERSION_BLOCK' in line):
+                break
+    version = f"{major}.{minor}.{build}"
+    if int(alpha):
+        version += f"a{alpha}"
+    return version
+
+def find_resource_files():
+    resource_base_dirs = ("locale", "nl-nl", "vocab", "nodejs", "intent", "dialog")
+    base_dir = path.dirname(__file__)
+    package_data = ["*.json"]
+    for res in resource_base_dirs:
+        if path.isdir(path.join(base_dir, res)):
+            for (directory, _, files) in walk(path.join(base_dir, res)):
+                if files:
+                    package_data.append(
+                        path.join(directory.replace(base_dir, "").lstrip('/'),
+                                  '*'))
+    return package_data
+
+
+with open(path.join(path.abspath(path.dirname(__file__)), "README.md"), "r") as f:
+    long_description = f.read()
+
+setup(
+    name=PYPI_NAME,
+    version=get_version(),
+    long_description=long_description,
+    url=URL,
+    author=SKILL_AUTHOR,
+    description='A plugin to receive BT audio and send text to the hivemind-bus',
+    author_email='your.email@example.com',
+    license='BSD-3-Clause',
+    install_requires=[
+        "requests==2.32.5"
+    ],
+    include_package_data=True,
+    package_dir={SKILL_PKG: ""},
+    package_data={SKILL_PKG: find_resource_files()},
+    packages=[SKILL_PKG],
+    keywords='ovos hivemind esp32 bluetooth plugin',
+    entry_points={'ovos.plugin.skill': PLUGIN_ENTRY_POINT}
+)
