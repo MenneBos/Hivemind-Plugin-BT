@@ -84,5 +84,5 @@ setup(
     package_data={SKILL_PKG: find_resource_files()},
     packages=[SKILL_PKG],
     keywords='ovos hivemind esp32 bluetooth plugin',
-    entry_points={'ovos.plugin.skill': PLUGIN_ENTRY_POINT}
+    entry_points={'ovos.plugin.phal': PLUGIN_ENTRY_POINT}
 )
