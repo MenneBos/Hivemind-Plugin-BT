@@ -3,4 +3,4 @@ ovos-utils
 ovos-bus-client
 soundfile
 requests
-bpybluez
+pybluez
