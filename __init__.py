@@ -33,17 +33,6 @@ server_sock = None
 # Path to your audio file
 audio_file = "audio.raw"
 
-
-# --------------------------------------
-#  Connect with the websocket in OVOS
-# --------------------------------------
-#bus = MessageBusClient(host="localhost", port=8181)
-#bus.run_in_thread()  # non-blocking
-#if not bus.connected_event.wait(timeout=5):
-#    print("❌ Failed to connect to OVOS bus using ovos_bus_client")
-#else:
-#    print("✅ Connected to OVOS bus")
-
 # --------------------------------------
 #  Convert PCM -> FLAC
 # --------------------------------------
@@ -171,6 +160,19 @@ def process_audio_chunk(data):
     return samples.tobytes()
 
 # --------------------------------------
+#  get the RSSI
+# --------------------------------------
+def get_rssi(mac):
+    """Vraag RSSI op via hcitool (werkt alleen als device verbonden is)."""
+    try:
+        output = subprocess.check_output(["hcitool", "rssi", mac], text=True)
+        # output bv: "RSSI return value: -45"
+        return int(output.strip().split()[-1])
+    except Exception as e:
+        print("Kon RSSI niet ophalen:", e)
+        return None
+
+# --------------------------------------
 #  Main Bluetooth server loop
 # --------------------------------------
 class AtomBTPlugin(PHALPlugin):
@@ -190,13 +192,22 @@ class AtomBTPlugin(PHALPlugin):
         """Main loop: accept connections and process audio data."""
         self.server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
         self.server_sock.bind(("", CHANNEL))
-        self.server_sock.listen(CHANNEL)
+        self.server_sock.listen(1)
         LOG.info(f"RFCOMM server active on channel {CHANNEL}, waiting for ESP32...")
 
         try:
             while True:
                 client_sock, client_info = self.server_sock.accept()
                 LOG.info(f"Connection established with {client_info}")
+
+                mac = client_info[0]
+
+                # Meet RSSI
+                rssi = get_rssi(mac)
+                if rssi is not None:
+                    msg = f"RSSI:{rssi}\n"
+                    client_sock.send(msg)
+                    print("Verstuurd:", msg)
 
                 pcm_buffer = io.BytesIO()
                 total_bytes = 0
@@ -206,6 +217,7 @@ class AtomBTPlugin(PHALPlugin):
                         data = client_sock.recv(4096)
                         if not data:
                             break
+                        
                         pcm_buffer.write(data)
                         total_bytes += len(data)
 

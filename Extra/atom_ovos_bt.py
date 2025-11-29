@@ -35,7 +35,6 @@ client_sock = None
 # Path to your audio file
 audio_file = "audio.raw"
 
-
 # --------------------------------------
 #  Connect with the websocket in OVOS
 # --------------------------------------
@@ -173,19 +172,43 @@ def process_audio_chunk(data):
     return samples.tobytes()
 
 # --------------------------------------
+#  get the RSSI
+# --------------------------------------
+def get_rssi(mac):
+    """Vraag RSSI op via hcitool (werkt alleen als device verbonden is)."""
+    try:
+        output = subprocess.check_output(["hcitool", "rssi", mac], text=True)
+        # output bv: "RSSI return value: -45"
+        return int(output.strip().split()[-1])
+    except Exception as e:
+        print("Kon RSSI niet ophalen:", e)
+        return None
+
+# --------------------------------------
 #  Main Bluetooth server loop
 # --------------------------------------
 def main():
     global server_sock, client_sock
     server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
     server_sock.bind(("", CHANNEL))
-    server_sock.listen(CHANNEL)
+    server_sock.listen(1)
+
+
     print(f"RFCOMM server (zonder SDP) actief op channel {CHANNEL}, wacht op ESP32...")
 
     try:
         while True:
             client_sock, client_info = server_sock.accept()
             print(">>> Verbinding tot stand met", client_info)
+
+            mac = client_info[0]
+
+            # Meet RSSI
+            rssi = get_rssi(mac)
+            if rssi is not None:
+                msg = f"RSSI:{rssi}\n"
+                client_sock.send(msg)
+                print("Verstuurd:", msg)
 
             #server_sock.close()
             pcm_buffer = io.BytesIO()
@@ -200,9 +223,6 @@ def main():
 
                   pcm_buffer.write(data)
                   total_bytes += len(data)
-
-                  #processed = process_audio_chunk(data) 
-                  #wav.writeframes(data) #processed)
 
             except Exception as e:
                 print("Connection error:", e)
