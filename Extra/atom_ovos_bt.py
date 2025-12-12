@@ -1,5 +1,3 @@
-#!/home/ovos/.venvs/ovos/bin/python3
-
 import io
 import soundfile as sf
 import requests
@@ -38,6 +36,7 @@ audio_file = "audio.raw"
 # --------------------------------------
 #  Connect with the websocket in OVOS
 # --------------------------------------
+print("start connecting to OVOS bus")
 bus = MessageBusClient(host="localhost", port=8181)
 bus.run_in_thread()  # non-blocking
 if not bus.connected_event.wait(timeout=5):
@@ -56,9 +55,9 @@ def pcm_to_flac(pcm_bytes, sample_rate=SAMPLE_RATE):
     sf.write(flac_buffer, audio_np, samplerate=sample_rate, format='FLAC', subtype='PCM_16')
     flac_buffer.seek(0)
 
-#    sf.write("audio.wav", audio_np.reshape(-1,1), samplerate=16000,
-#         format="WAV", subtype="PCM_16")
-#    subprocess.run(["aplay", "audio.wav"])
+    sf.write("audio.wav", audio_np.reshape(-1,1), samplerate=16000,
+         format="WAV", subtype="PCM_16")
+    subprocess.run(["aplay", "audio.wav"])
 
 #    samples_be = np.frombuffer(pcm_bytes, dtype='>i2')  # big-endian
 #    samples_le = np.frombuffer(pcm_bytes, dtype='<i2')  # little-endian
@@ -104,12 +103,6 @@ def signal_handler(sig, frame):
         try:
             server_sock.close()
             print("Server socket closed")
-        except Exception:
-            pass
-    if wav_file:
-        try:
-            wav_file.close()
-            print("WAV file closed")
         except Exception:
             pass
     sys.exit(0)
@@ -193,6 +186,8 @@ def main():
     server_sock.bind(("", CHANNEL))
     server_sock.listen(1)
 
+    number_rssi_requested = 0
+
 
     print(f"RFCOMM server (zonder SDP) actief op channel {CHANNEL}, wacht op ESP32...")
 
@@ -204,11 +199,14 @@ def main():
             mac = client_info[0]
 
             # Meet RSSI
+
             rssi = get_rssi(mac)
+            print("Huidige RSSI:", rssi)
             if rssi is not None:
                 msg = f"RSSI:{rssi}\n"
                 client_sock.send(msg)
                 print("Verstuurd:", msg)
+
 
             #server_sock.close()
             pcm_buffer = io.BytesIO()
