@@ -1,13 +1,18 @@
+#--------------------------
+# deze werkt goed op de hivemind-staellite
+# de esp32 code is 2_main_rssi_minimal.cpp of
+# M5_BT_rssi_min.ino
+#--------------------------
+
 import bluetooth
 import threading
 import subprocess
-
 
 from ovos_plugin_manager.phal import PHALPlugin   # due to hivemind fakebus
 from ovos_bus_client.message import Message       # due to hivemind fakebus
 from ovos_utils.log import LOG
 
-CHANNEL = 1
+CHANNEL = 3
 
 # --------------------------------------
 #  get the RSSI
@@ -32,9 +37,6 @@ class AtomBTPlugin(PHALPlugin):
         self.server_thread = threading.Thread(target=self.bt_server_loop) ## , daemon=True)
         self.server_thread.start()
 
-        # Blokkeer hier zodat het proces niet afsluit
-        #self.server_thread.join()
-
     def bt_server_loop(self):
         """Main loop: accept connections and process audio data."""       
         # Maak een RFCOMM server socket
@@ -44,10 +46,10 @@ class AtomBTPlugin(PHALPlugin):
 
         LOG.info(f"RFCOMM server active on channel {CHANNEL}, waiting for ESP32...")
         try:
-            while True:    
+            while True:
                 client_sock, client_info = server_sock.accept()
-                LOG.info(f"RFCOMM connected to: {client_info}")
-                
+                LOG.info(f"Connected to: {client_info}")
+                                
                 mac = client_info[0]
 
                 rssi = get_rssi(mac)
@@ -57,15 +59,15 @@ class AtomBTPlugin(PHALPlugin):
                     client_sock.send(msg)
                     LOG.info("Verstuurd:", msg)
 
-                #try:
-                #    while True:
-                #        data = client_sock.recv(1024)
-                #        if not data:
-                #            break
-                #        LOG.info(f"Ontvangen: {data.decode()}")
-                #        client_sock.send(b"Hallo ESP32\n")
-                #except OSError:
-                #    pass
+                try:
+                    while True:
+                        data = client_sock.recv(1024)
+                        if not data:
+                            break
+                        LOG.info("Ontvangen:", data.decode())
+                        client_sock.send(b"Hallo ESP32\n")
+                except OSError:
+                    pass
 
         except Exception as e:
             print("Server error:", e)
@@ -76,4 +78,3 @@ class AtomBTPlugin(PHALPlugin):
             if server_sock:
                 server_sock.close()
             LOG.info("Verbinding gesloten")
-

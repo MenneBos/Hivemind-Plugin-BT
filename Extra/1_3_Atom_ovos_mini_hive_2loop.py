@@ -1,6 +1,11 @@
+#--------------------------
+# deze werkt goed op de hivemind-staellite
+# de esp32 code is main_minimal.cpp of
+# M5_BT_min.ino
+#--------------------------
+
 import bluetooth
 import threading
-
 
 from ovos_plugin_manager.phal import PHALPlugin   # due to hivemind fakebus
 from ovos_bus_client.message import Message       # due to hivemind fakebus
