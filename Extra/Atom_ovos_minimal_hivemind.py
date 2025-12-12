@@ -21,27 +21,27 @@ class AtomBTPlugin(PHALPlugin):
         # Blokkeer hier zodat het proces niet afsluit
         #self.server_thread.join()
 
-        def bt_server_loop(self):
-            """Main loop: accept connections and process audio data."""       
-            # Maak een RFCOMM server socket
-            server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-            server_sock.bind(("", 1))   # channel 1
-            server_sock.listen(1)
+    def bt_server_loop(self):
+        """Main loop: accept connections and process audio data."""       
+        # Maak een RFCOMM server socket
+        server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+        server_sock.bind(("", 1))   # channel 1
+        server_sock.listen(1)
 
-            LOG.info(f"RFCOMM server active on channel {CHANNEL}, waiting for ESP32...")
-            client_sock, client_info = server_sock.accept()
-            LOG.info(f"Connected to: {client_info}")
+        LOG.info(f"RFCOMM server active on channel {CHANNEL}, waiting for ESP32...")
+        client_sock, client_info = server_sock.accept()
+        LOG.info(f"Connected to: {client_info}")
 
-            try:
-                while True:
-                    data = client_sock.recv(1024)
-                    if not data:
-                        break
-                    print("Ontvangen:", data.decode())
-                    client_sock.send(b"Hallo ESP32\n")
-            except OSError:
-                pass
+        try:
+            while True:
+                data = client_sock.recv(1024)
+                if not data:
+                    break
+                print("Ontvangen:", data.decode())
+                client_sock.send(b"Hallo ESP32\n")
+        except OSError:
+            pass
 
-            print("Verbinding gesloten")
-            client_sock.close()
-            server_sock.close()
+        print("Verbinding gesloten")
+        client_sock.close()
+        server_sock.close()
