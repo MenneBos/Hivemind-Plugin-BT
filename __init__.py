@@ -30,10 +30,18 @@ client_sock = None
 audio_file = "audio.raw"
 FirstTime = True
 
+bus = Message()
+#bus.run_in_thread()   # important
+#bus.wait_for_ready()
+
 # --------------------------------------
 #  Convert PCM -> FLAC
 # --------------------------------------
 def pcm_to_flac(pcm_bytes, sample_rate=SAMPLE_RATE):
+    # Zorg dat buffer een veelvoud van 2 bytes is (PCM16)
+    if len(pcm_bytes) % 2 != 0:
+        pcm_bytes = pcm_bytes[:-1]
+
     audio_np = np.frombuffer(pcm_bytes, dtype=np.int16)
     audio_np_swapped = audio_np.byteswap().newbyteorder()
 
@@ -86,7 +94,6 @@ class AtomBTPlugin(PHALPlugin):
     def __init__(self, bus=None, config=None):
         super().__init__(bus=bus, name="atom_bt-phal-plugin", config=config)
         self.bus = bus
-        print(">>> Verbinding tot stand met", self.client_info)
         self.buffer = ""
         LOG.info("AtomBTPlugin initialized")
         
@@ -109,57 +116,56 @@ class AtomBTPlugin(PHALPlugin):
                 LOG.info(f"Connected to: {self.client_info}")
                 self.mac = self.client_info[0]
 
-                data = self.client_sock.recv(1024)
-                if not data:
+                # 1️⃣ lees exact 19 bytes voor een handler
+                handler_bytes = client_sock.recv(HANDLER_LEN)
+                if not handler_bytes:
                     break
-                self.buffer += data.decode()
 
-                while "\n" in self.buffer:
-                    line, self.buffer = self.buffer.split("\n", 1)
-                    cmd = line.strip()
-                    print("Ontvangen:", cmd)
+                # decode en strip padding (null bytes of spaties)
+                cmd = handler_bytes.decode('utf-8', errors='ignore').strip('\0').strip()
+                print("Ontvangen:", cmd)
+                
+                if cmd == "handler_rssi":
+                    rssi = get_rssi(mac)
+                    if rssi is not None:
+                        msg = f"RSSI:{rssi}\n"
+                    else:
+                        msg = "RSSI:-999\n"
+                    client_sock.send(msg.encode())
+                    print("Verstuurd:", msg.strip())
 
-                    if cmd == "handler_rssi":
-                        rssi = get_rssi(self.mac)
-                        if rssi is not None:
-                            msg = f"RSSI:{rssi}\n"
-                        else:
-                            msg = "RSSI:-999\n"
-                        self.client_sock.send(msg.encode())
-                        print("Verstuurd:", msg.strip())
+                elif cmd == "handler_audio_start":
+                    pcm_buffer = io.BytesIO()
+                    total_bytes = 0 
 
-                    elif cmd == "handler_audio_start":
-                        pcm_buffer = io.BytesIO()
-                        total_bytes = 0 
+                    # Lees data zolang verbinding actief is
+                    try:
+                        while True:
+                            data = self.client_sock.recv(1024)
+                            if not data:
+                                break
 
-                        # Lees data zolang verbinding actief is
-                        try:
-                            while True:
-                                data = self.client_sock.recv(1024)
-                                if not data:
-                                    break
+                        pcm_buffer.write(data)
+                        total_bytes += len(data)
 
-                            pcm_buffer.write(data)
-                            total_bytes += len(data)
+                    except Exception as e:
+                        print("Connection error:", e)
 
-                        except Exception as e:
-                            print("Connection error:", e)
-
-                        finally:
-                            if self.client_sock:
-                                self.client_sock.close()
-                                #print("🔁 closed sockestarting to wait for next ESP32 connection...\n")
-                                print(f"Correctly closed client, received {total_bytes} bytes")
-                        
-                        transcript = transcribe_with_chromium(pcm_buffer.getvalue())
-                        print("🗣️ STT Result:", transcript)  
-                        # send it to the bus
-                        self.bus.emit("ovos.plugin.audio.transcript", {"transcript": transcript})
+                    finally:
+                        if self.client_sock:
+                            self.client_sock.close()
+                            #print("🔁 closed sockestarting to wait for next ESP32 connection...\n")
+                            print(f"Correctly closed client, received {total_bytes} bytes")
                     
-                    elif cmd == "handler_audio_close":
-                        print("Verbinding gesloten")
-                        self.client_sock.close()
-                        break   # <<< uitstappen uit de while-loop
+                    transcript = transcribe_with_chromium(pcm_buffer.getvalue())
+                    print("🗣️ STT Result:", transcript)  
+                    # send it to the bus
+                    self.bus.emit("ovos.plugin.audio.transcript", {"transcript": transcript})
+                
+                elif cmd == "handler_audio_close":
+                    print("Verbinding gesloten")
+                    self.client_sock.close()
+                    break   # <<< uitstappen uit de while-loop
 
         except Exception as e:
             LOG.info("Server error:", e)
