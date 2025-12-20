@@ -7,6 +7,14 @@
 import bluetooth
 import threading
 import subprocess
+import numpy as np
+import soundfile as sf
+import io
+import signal
+import sys
+import requests
+import json
+import time
 
 from ovos_plugin_manager.phal import PHALPlugin   # due to hivemind fakebus
 from ovos_bus_client.message import Message       # due to hivemind fakebus
@@ -29,6 +37,8 @@ client_sock = None
 # Path to your audio file
 audio_file = "audio.raw"
 FirstTime = True
+HANDLER_LEN = 19  # vaste lengte van de handler
+AUDIO_CHUNK = 120
 
 bus = Message()
 #bus.run_in_thread()   # important
@@ -109,70 +119,73 @@ class AtomBTPlugin(PHALPlugin):
         self.server_thread.start()
 
     def bt_server_loop(self):
-
         try:
             while True:
                 self.client_sock, self.client_info = self.server_sock.accept()
+                self.client_sock.settimeout(0.2)
+
                 LOG.info(f"Connected to: {self.client_info}")
                 self.mac = self.client_info[0]
 
-                # 1️⃣ lees exact 19 bytes voor een handler
-                handler_bytes = client_sock.recv(HANDLER_LEN)
-                if not handler_bytes:
-                    break
+                audio_active = False
+                pcm_buffer = io.BytesIO()
+                total_bytes = 0
 
-                # decode en strip padding (null bytes of spaties)
-                cmd = handler_bytes.decode('utf-8', errors='ignore').strip('\0').strip()
-                print("Ontvangen:", cmd)
-                
-                if cmd == "handler_rssi":
-                    rssi = get_rssi(mac)
-                    if rssi is not None:
-                        msg = f"RSSI:{rssi}\n"
-                    else:
-                        msg = "RSSI:-999\n"
-                    client_sock.send(msg.encode())
-                    print("Verstuurd:", msg.strip())
-
-                elif cmd == "handler_audio_start":
-                    pcm_buffer = io.BytesIO()
-                    total_bytes = 0 
-
-                    # Lees data zolang verbinding actief is
+                while True:
                     try:
-                        while True:
-                            data = self.client_sock.recv(1024)
-                            if not data:
-                                break
+                        data = self.client_sock.recv(AUDIO_CHUNK)
+                    except socket.timeout:
+                        continue
 
+                    if not data:
+                        break
+
+                    # ---- handler detectie ----
+                    if len(data) == HANDLER_LEN:
+                        cmd = data.decode("utf-8", errors="ignore").strip("\0").strip()
+                        LOG.info(f"Handler received: {cmd}")
+
+                        if cmd == "handler_rssi":
+                            rssi = get_rssi(self.mac)
+                            msg = f"RSSI:{rssi if rssi is not None else -999}\n"
+                            self.client_sock.send(msg.encode())
+
+                        elif cmd == "handler_audio_start":
+                            pcm_buffer = io.BytesIO()
+                            total_bytes = 0
+                            audio_active = True
+                            LOG.info("🎙 audio start")
+
+                        elif cmd == "handler_audio_close":
+                            LOG.info("⏹ audio stop")
+                            audio_active = False
+                            break
+
+                        continue  # handler verwerkt
+
+                    # ---- audio data ----
+                    if audio_active:
                         pcm_buffer.write(data)
                         total_bytes += len(data)
 
-                    except Exception as e:
-                        print("Connection error:", e)
-
-                    finally:
-                        if self.client_sock:
-                            self.client_sock.close()
-                            #print("🔁 closed sockestarting to wait for next ESP32 connection...\n")
-                            print(f"Correctly closed client, received {total_bytes} bytes")
-                    
+                # ---- na audio ----
+                if total_bytes > 0:
+                    LOG.info(f"Received {total_bytes} bytes audio")
                     transcript = transcribe_with_chromium(pcm_buffer.getvalue())
-                    print("🗣️ STT Result:", transcript)  
-                    # send it to the bus
-                    self.bus.emit("ovos.plugin.audio.transcript", {"transcript": transcript})
-                
-                elif cmd == "handler_audio_close":
-                    print("Verbinding gesloten")
-                    self.client_sock.close()
-                    break   # <<< uitstappen uit de while-loop
+                    LOG.info(f"🗣 STT Result: {transcript}")
+                    self.bus.emit(
+                        "ovos.plugin.audio.transcript",
+                        {"transcript": transcript}
+                    )
+
+                self.client_sock.close()
+                LOG.info("Client socket closed, waiting for next ESP32")
 
         except Exception as e:
-            LOG.info("Server error:", e)
+            LOG.error(f"Server error: {e}")
 
         finally:
             if self.client_sock:
                 self.client_sock.close()
             if self.server_sock:
                 self.server_sock.close()
-            LOG.info("Verbinding gesloten")
